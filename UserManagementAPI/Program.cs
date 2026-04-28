@@ -1,4 +1,5 @@
 using UserManagementAPI.Models;
+using UserManagementAPI.Middleware;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Diagnostics;
 
@@ -17,19 +18,14 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseExceptionHandler(errorApp =>
-{
-    errorApp.Run(async context =>
-    {
-        context.Response.StatusCode = 500;
-        context.Response.ContentType = "application/json";
-        var contextFeature = context.Features.Get<IExceptionHandlerFeature>();
-        if (contextFeature != null)
-        {
-            await context.Response.WriteAsJsonAsync(new { Error = "An internal server error occurred." });
-        }
-    });
-});
+// 1. Global Exception Handling (First to catch everything)
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+// 2. Authentication Middleware (Next)
+app.UseMiddleware<AuthenticationMiddleware>();
+
+// 3. Logging Middleware (Last)
+app.UseMiddleware<RequestResponseLoggingMiddleware>();
 
 app.UseHttpsRedirection();
 
@@ -44,15 +40,8 @@ var users = new List<User>
 // GET: /users - Retrieve all users with pagination
 app.MapGet("/users", (int page = 1, int pageSize = 10) => 
 {
-    try 
-    {
-        var pagedUsers = users.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-        return Results.Ok(pagedUsers);
-    }
-    catch (Exception)
-    {
-        return Results.BadRequest("Invalid pagination parameters.");
-    }
+    var pagedUsers = users.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+    return Results.Ok(pagedUsers);
 })
    .WithName("GetUsers")
    .WithOpenApi();
@@ -70,30 +59,23 @@ app.MapGet("/users/{id}", (int id) =>
 // POST: /users - Create a new user
 app.MapPost("/users", (User newUser) =>
 {
-    try
+    // Validation
+    var validationResults = new List<ValidationResult>();
+    var context = new ValidationContext(newUser);
+    if (!Validator.TryValidateObject(newUser, context, validationResults, true))
     {
-        // Validation
-        var validationResults = new List<ValidationResult>();
-        var context = new ValidationContext(newUser);
-        if (!Validator.TryValidateObject(newUser, context, validationResults, true))
-        {
-            return Results.BadRequest(validationResults.Select(r => r.ErrorMessage));
-        }
-
-        // Business Logic: Check for duplicate email
-        if (users.Any(u => u.Email.Equals(newUser.Email, StringComparison.OrdinalIgnoreCase)))
-        {
-            return Results.Conflict("A user with this email already exists.");
-        }
-
-        newUser.Id = users.Count > 0 ? users.Max(u => u.Id) + 1 : 1;
-        users.Add(newUser);
-        return Results.Created($"/users/{newUser.Id}", newUser);
+        return Results.BadRequest(validationResults.Select(r => r.ErrorMessage));
     }
-    catch (Exception ex)
+
+    // Business Logic: Check for duplicate email
+    if (users.Any(u => u.Email.Equals(newUser.Email, StringComparison.OrdinalIgnoreCase)))
     {
-        return Results.Problem("An error occurred while creating the user.");
+        return Results.Conflict("A user with this email already exists.");
     }
+
+    newUser.Id = users.Count > 0 ? users.Max(u => u.Id) + 1 : 1;
+    users.Add(newUser);
+    return Results.Created($"/users/{newUser.Id}", newUser);
 })
 .WithName("CreateUser")
 .WithOpenApi();
@@ -102,33 +84,26 @@ app.MapPost("/users", (User newUser) =>
 // PUT: /users/{id} - Update an existing user
 app.MapPut("/users/{id}", (int id, User updatedUser) =>
 {
-    try
+    var index = users.FindIndex(u => u.Id == id);
+    if (index == -1) return Results.NotFound();
+
+    // Validation
+    var validationResults = new List<ValidationResult>();
+    var context = new ValidationContext(updatedUser);
+    if (!Validator.TryValidateObject(updatedUser, context, validationResults, true))
     {
-        var index = users.FindIndex(u => u.Id == id);
-        if (index == -1) return Results.NotFound();
-
-        // Validation
-        var validationResults = new List<ValidationResult>();
-        var context = new ValidationContext(updatedUser);
-        if (!Validator.TryValidateObject(updatedUser, context, validationResults, true))
-        {
-            return Results.BadRequest(validationResults.Select(r => r.ErrorMessage));
-        }
-
-        // Business Logic: Check for duplicate email (excluding current user)
-        if (users.Any(u => u.Email.Equals(updatedUser.Email, StringComparison.OrdinalIgnoreCase) && u.Id != id))
-        {
-            return Results.Conflict("A user with this email already exists.");
-        }
-
-        updatedUser.Id = id;
-        users[index] = updatedUser;
-        return Results.NoContent();
+        return Results.BadRequest(validationResults.Select(r => r.ErrorMessage));
     }
-    catch (Exception)
+
+    // Business Logic: Check for duplicate email (excluding current user)
+    if (users.Any(u => u.Email.Equals(updatedUser.Email, StringComparison.OrdinalIgnoreCase) && u.Id != id))
     {
-        return Results.Problem("An error occurred while updating the user.");
+        return Results.Conflict("A user with this email already exists.");
     }
+
+    updatedUser.Id = id;
+    users[index] = updatedUser;
+    return Results.NoContent();
 })
 .WithName("UpdateUser")
 .WithOpenApi();
@@ -144,6 +119,14 @@ app.MapDelete("/users/{id}", (int id) =>
     return Results.NoContent();
 })
 .WithName("DeleteUser")
+.WithOpenApi();
+
+// TEST: /test-error - Trigger an unhandled exception for testing
+app.MapGet("/test-error", () =>
+{
+    throw new Exception("This is a test exception!");
+})
+.WithName("TestError")
 .WithOpenApi();
 
 app.Run();
