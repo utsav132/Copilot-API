@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "nb3oSsD1UCU=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\Utsav Sehgal\\Downloads\\pdfs\\Collage\\Coursera\\Copilot API\\UserManagementAPI\\UserManagementAPI.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Utsav Sehgal\\.nuget\\packages\\microsoft.aspnetcore.openapi\\10.0.7\\microsoft.aspnetcore.openapi.10.0.7.nupkg.sha512",
+    "C:\\Users\\Utsav Sehgal\\.nuget\\packages\\microsoft.openapi\\2.0.0\\microsoft.openapi.2.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}
